@@ -2082,8 +2082,16 @@ fn codex_request_metadata_includes_configured_or_default_model_label() {
     let _env_lock = external_cli_env_guard();
     let codex_home = tempfile::tempdir().unwrap();
     let trae_home = tempfile::tempdir().unwrap();
+    let claude_home = tempfile::tempdir().unwrap();
     let _codex_home = EnvGuard::set("CODEX_HOME", codex_home.path());
     let _trae_home = EnvGuard::set("TRAE_HOME", trae_home.path());
+    let _home = EnvGuard::set("HOME", claude_home.path());
+    let _claude_config_dir = EnvGuard::unset("CLAUDE_CONFIG_DIR");
+    let _claude_home = EnvGuard::unset("CLAUDE_HOME");
+    let _anthropic_model = EnvGuard::unset("ANTHROPIC_MODEL");
+    let _default_sonnet = EnvGuard::unset("ANTHROPIC_DEFAULT_SONNET_MODEL");
+    let _default_opus = EnvGuard::unset("ANTHROPIC_DEFAULT_OPUS_MODEL");
+    let _default_haiku = EnvGuard::unset("ANTHROPIC_DEFAULT_HAIKU_MODEL");
     let configured_request = ExternalCliRunRequest {
         images: Vec::new(),
         message: "hello".to_string(),

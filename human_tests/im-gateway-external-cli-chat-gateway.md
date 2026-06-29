@@ -1132,8 +1132,35 @@
 5. 模型切换系统行是轻量提示样式：文字和时间同一行、字体与时间一致、无边框、无背景，不展示成正式消息气泡。
 6. `/model` 命令运行期间不插入 `content` 为空的 system message；DOM 中 `agent-chat-message-system` 的文本内容不能为空。
 
+### TC-IEC-56: Claude Code 模型元信息测试隔离宿主机环境
+
+操作步骤：
+1. 在最新源码 worktree 中设置会污染 Claude Code 默认模型解析的宿主机环境变量：
+   ```bash
+   export CLAUDE_HOME="$HOME/.claude"
+   export ANTHROPIC_MODEL="claude-host-direct-model"
+   export ANTHROPIC_DEFAULT_SONNET_MODEL="claude-host-sonnet-model"
+   export ANTHROPIC_DEFAULT_OPUS_MODEL="claude-host-opus-model"
+   export ANTHROPIC_DEFAULT_HAIKU_MODEL="claude-host-haiku-model"
+   ```
+2. 执行 focused external CLI 回归：
+   ```bash
+   PATH="$HOME/.cargo/bin:$PATH" SKIP_FRONTEND_BUILD=1 cargo test -p bifrost-admin external_cli --lib -- --nocapture
+   ```
+3. 执行 focused Claude Code 回归：
+   ```bash
+   PATH="$HOME/.cargo/bin:$PATH" SKIP_FRONTEND_BUILD=1 cargo test -p bifrost-admin claude_code --lib -- --nocapture
+   ```
+4. 检查失败前的两个敏感断言路径：默认 Claude Code metadata 不应读取宿主机 `ANTHROPIC_MODEL`，上线通知 settings 模型应以测试内临时 `.claude/settings.json` 为准。
+
+预期结果：
+1. `external_cli` 过滤集全部通过，`codex_request_metadata_includes_configured_or_default_model_label` 中 Claude Code 默认 metadata 的 `model` 仍为空，`modelSource` 为 `claude code default`。
+2. `claude_code` 过滤集全部通过，`online_notification_context_resolves_claude_code_settings_model` 返回测试内配置的 `claude-opus-4-7`，不会被宿主机 `CLAUDE_HOME` 或 `ANTHROPIC_DEFAULT_*` 覆盖。
+3. 测试执行后宿主机环境变量由 shell 自身管理，Rust 测试内的 guard 不会把污染变量泄漏到其他测试用例。
+
 ## 最近执行记录
 
+- 2026-06-29：新增并执行 TC-IEC-56。先在最新 `origin/main` worktree 复现 `PATH="$HOME/.cargo/bin:$PATH" SKIP_FRONTEND_BUILD=1 cargo test -p bifrost-admin external_cli --lib -- --nocapture` 失败：`codex_request_metadata_includes_configured_or_default_model_label` 读取宿主机 Claude 环境后得到 `model=claude-opus-4-6`，预期为空。修复测试环境隔离后，带污染环境变量 `CLAUDE_HOME="$HOME/.claude"`、`ANTHROPIC_MODEL=claude-host-direct-model`、`ANTHROPIC_DEFAULT_SONNET_MODEL=claude-host-sonnet-model`、`ANTHROPIC_DEFAULT_OPUS_MODEL=claude-host-opus-model`、`ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-host-haiku-model` 执行 `PATH="$HOME/.cargo/bin:$PATH" SKIP_FRONTEND_BUILD=1 cargo test -p bifrost-admin external_cli --lib -- --nocapture` 通过 66 个测试；执行 `PATH="$HOME/.cargo/bin:$PATH" SKIP_FRONTEND_BUILD=1 cargo test -p bifrost-admin claude_code --lib -- --nocapture` 通过 8 个测试，确认 Claude Code metadata 与上线通知测试均不再读取宿主机 Claude 模型配置。
 - 2026-06-26：追加执行 TC-IEC-55 的真实 Web UI 即时切模型回归。修复前在未刷新页面直接发送 `/model` 会先插入 `content:""` 的 system 占位，DOM 中出现空白系统胶囊，并且系统提示是有边框/背景的大号气泡。修复后执行 `pnpm --dir web run build`、`pnpm --dir web run test:unit -- AgentChatSection --run`、`cargo build --bin bifrost` 均通过；覆盖重启 `9900`，PID `87418`，启动命令包含 `BIFROST_SYNC_DISABLE_AUTO_LOGIN_PROMPT=1`、`BIFROST_DISABLE_TRAY=1`、`--no-system-proxy`、`--no-tray`、`--no-intercept`。真实浏览器打开 `admin-chat-direct-system-check-1782409300`，先刷新确认新 bundle 生效，再发送 `/model GPT-5.5`：DOM 返回 `emptySystemCount=0`，最后一条 system 文本为 `切换模型为 GPT-5.5`，`agent-chat-message-bubble-system` 样式为 `borderWidth:0px`、`borderStyle:none`、`backgroundColor:rgba(0, 0, 0, 0)`、`fontSize:11px`、`lineHeight:18px`、`flexDirection:row`、`gap:8px`。刷新后再次确认 `emptySystemCount=0`、`hasLatestSwitch=true`、普通对话文本仍存在，HUD 显示 `Model GPT-5.5 (trae)`。
 - 2026-06-26：执行 TC-IEC-55 的真实 9900 回归。先确认问题根因：`session_state.json` 中 `admin-chat-direct-system-check-1782409300::traex::Traex` 已持久化多条 `role:"system"` 模型切换消息，但 session detail 主路径先从 canonical JSONL 读到 user/assistant timeline 后，只合并 external runner metadata，没有把 external state 的 system display messages 合并回 `messages`，导致刷新后系统提示丢失。修复后执行 `cargo test -p bifrost-admin handlers::im_gateway::agent_api::tests::session_detail_metadata_merge_preserves_external_system_display_messages -- --nocapture` 通过；执行 `cargo build --bin bifrost` 后覆盖重启 `9900`，PID `46889`，启动命令包含 `BIFROST_SYNC_DISABLE_AUTO_LOGIN_PROMPT=1`、`BIFROST_DISABLE_TRAY=1`、`--no-system-proxy`、`--no-tray`、`--no-intercept`。API 验证 `/_bifrost/api/im-gateway/agent/sessions/admin-chat-direct-system-check-1782409300` 返回 `message_count=11`，包含 5 条 `role:"system"` 的 `切换模型为 ...` 消息，同时保留 `你好`、`你是谁` 等 user/assistant 对话。真实 Edge/Playwright 打开同一 URL 并刷新，DOM 中 `agent-chat-message-system` 数量为 5，页面文本同时包含 `切换模型为 Kimi-K2.6`、`切换模型为 GPT-5.5`、`你好`、`你是谁`，HUD 显示 `Model Kimi-K2.6 (trae)`。
 - 2026-06-26：追加执行 TC-IEC-50 的真实 9900 slash 键盘回归。先发现 `/model` 后按 Tab 会错误选中 `/models` 并提交，输入框被清空且后端返回 `runner 'codex' is not enabled`；修复后重新执行 `pnpm --dir web build` 与 `cargo build --bin bifrost`，覆盖重启 9900，PID `83008`，启动命令包含 `BIFROST_SYNC_DISABLE_AUTO_LOGIN_PROMPT=1`、`BIFROST_DISABLE_TRAY=1`、`--no-system-proxy`、`--no-tray`、`--no-intercept`。Playwright 打开 `/_bifrost/ai?aiSection=agent-chat&agentSection=chat&session=codex-ui-slash-smoke-1782430796490&view=active`：输入 `/mo` 后按 Enter，页面发送 `/models` 并收到后端响应；再次输入 `/model` 后按 Tab，输入框值保持为 `/model `，焦点仍在 `agent-chat-input`，未发送请求。截图保存为 `/tmp/bifrost-9900-slash-smoke-fixed.png`。同时通过真实 `/chat/stream` API 验证 Traex `/models` 返回 Traex 模型列表、Traex 非法 `/model definitely-not-a-real-model-for-smoke` 返回“未切换模型”、Traex `/model Kimi-K2.6` 在 session detail 中写入 `messages[0].role="system"`、`content="切换模型为 Kimi-K2.6"` 与 `metadata.modelOverride="Kimi-K2.6"`；Codex `/models` 返回 Codex 模型列表，Codex 非法 `/model definitely-not-a-real-codex-model-for-smoke` 返回“未切换模型”。

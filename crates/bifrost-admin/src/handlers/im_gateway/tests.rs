@@ -332,7 +332,11 @@ pub(super) fn online_notification_context_resolves_claude_code_settings_model() 
     let _env_guard = EnvGuard::set_data_dir(temp_dir.path());
     let _home_guard = EnvVarGuard::set("HOME", &home.path().display().to_string());
     let _claude_config_guard = EnvVarGuard::remove("CLAUDE_CONFIG_DIR");
+    let _claude_home_guard = EnvVarGuard::remove("CLAUDE_HOME");
     let _anthropic_model_guard = EnvVarGuard::remove("ANTHROPIC_MODEL");
+    let _default_sonnet_guard = EnvVarGuard::remove("ANTHROPIC_DEFAULT_SONNET_MODEL");
+    let _default_opus_guard = EnvVarGuard::remove("ANTHROPIC_DEFAULT_OPUS_MODEL");
+    let _default_haiku_guard = EnvVarGuard::remove("ANTHROPIC_DEFAULT_HAIKU_MODEL");
     let mut provider = test_provider();
     provider.agent_config = Some(ImProviderAgentConfig {
         runner: Some(bifrost_agent::AgentRunnerMode::Custom(
