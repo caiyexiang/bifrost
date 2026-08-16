@@ -33,6 +33,7 @@ mod agent_api;
 mod agent_chat;
 mod agent_chat_concurrent;
 mod agent_chat_progress;
+mod agent_choice_card;
 mod agent_reply;
 mod agent_reply_attachments;
 mod agent_reply_target;
@@ -55,6 +56,7 @@ use agent_chat::*;
 use agent_chat_concurrent::*;
 #[cfg(test)]
 use agent_chat_progress::*;
+use agent_choice_card::*;
 use agent_reply::*;
 use agent_reply_attachments::*;
 use agent_reply_target::*;
